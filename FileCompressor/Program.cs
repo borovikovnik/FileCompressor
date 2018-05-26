@@ -1,7 +1,4 @@
-﻿using System.IO;
-
-
-namespace FileCompressor
+﻿namespace FileCompressor
 {
     class Program
     {

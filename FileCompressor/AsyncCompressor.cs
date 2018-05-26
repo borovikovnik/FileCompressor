@@ -1,10 +1,6 @@
-﻿
-
-
-using System;
+﻿using System;
 using System.IO;
 using System.IO.Compression;
-using System.Runtime.InteropServices;
 using System.Threading;
 
 namespace FileCompressor
@@ -20,8 +16,8 @@ namespace FileCompressor
         private Stream _inputFile;
         private Stream _outputFile;
         private readonly int _blockSize;
-        private byte[][] blocksData;
-        private byte[][] compressedBlocksData;
+        private byte[][] _blocksData;
+        private byte[][] _compressedBlocksData;
 
         private void OpenStreams(string inputPath, bool isCompression)
         {
@@ -56,8 +52,8 @@ namespace FileCompressor
             OpenStreams(inputPath, isCompression);
             var threadNumber = Environment.ProcessorCount;
             var threads = new Thread[threadNumber];
-            blocksData = new byte[threadNumber][];
-            compressedBlocksData = new byte[threadNumber][];
+            _blocksData = new byte[threadNumber][];
+            _compressedBlocksData = new byte[threadNumber][];
 
             if (isCompression)
             {
@@ -73,17 +69,16 @@ namespace FileCompressor
         private void CompressBlock(object index)
         {
             var i = (int)index;
-            using (var ms = new MemoryStream(blocksData[i].Length))
+            using (var ms = new MemoryStream(_blocksData[i].Length))
             {
                 using (var gzs = new GZipStream(ms, CompressionMode.Compress))
                 {
-                    gzs.Write(blocksData[i], 0, blocksData[i].Length);
+                    gzs.Write(_blocksData[i], 0, _blocksData[i].Length);
                     
                 }
-                compressedBlocksData[i] = ms.ToArray();
+                _compressedBlocksData[i] = ms.ToArray();
             }
         }
-
         private void Compress(Thread[] threads)
         {
             try
@@ -99,8 +94,8 @@ namespace FileCompressor
                             currNumberOfThreads = i+1;
                             currBlockSize = (int)(_inputFile.Length - _inputFile.Position);
                         }
-                        blocksData[i] = new byte[currBlockSize];
-                        _inputFile.Read(blocksData[i], 0, currBlockSize);
+                        _blocksData[i] = new byte[currBlockSize];
+                        _inputFile.Read(_blocksData[i], 0, currBlockSize);
                         threads[i] = new Thread(CompressBlock);
                         threads[i].Start(i);
                     }
@@ -112,9 +107,9 @@ namespace FileCompressor
 
                     for (var i = 0; i < currNumberOfThreads; i++)
                     {
-                        BitConverter.GetBytes(compressedBlocksData[i].Length)
-                                        .CopyTo(compressedBlocksData[i], InHeaderIndex);
-                        _outputFile.Write(compressedBlocksData[i], 0, compressedBlocksData[i].Length);
+                        BitConverter.GetBytes(_compressedBlocksData[i].Length)
+                                        .CopyTo(_compressedBlocksData[i], InHeaderIndex);
+                        _outputFile.Write(_compressedBlocksData[i], 0, _compressedBlocksData[i].Length);
                     }
                 }
             }
@@ -125,13 +120,13 @@ namespace FileCompressor
         }
 
 
-        public void DecompressBlock(object index)
+        private void DecompressBlock(object index)
         {
             var i = (int)index;
-            using (var input = new MemoryStream(compressedBlocksData[i]))
+            using (var input = new MemoryStream(_compressedBlocksData[i]))
             using (var ds = new GZipStream(input, CompressionMode.Decompress))
             {
-                ds.Read(blocksData[i], 0, blocksData[i].Length);
+                ds.Read(_blocksData[i], 0, _blocksData[i].Length);
             }
         }
         private void Decompress(Thread[] threads)
@@ -148,17 +143,17 @@ namespace FileCompressor
                     {
                         _inputFile.Read(buffer, 0, headerSize);
                         var compressedBlockLength = BitConverter.ToInt32(buffer, InHeaderIndex);
-                        compressedBlocksData[i] = new byte[compressedBlockLength];
-                        buffer.CopyTo(compressedBlocksData[i], 0);
-                        _inputFile.Read(compressedBlocksData[i], headerSize, compressedBlockLength - headerSize);
+                        _compressedBlocksData[i] = new byte[compressedBlockLength];
+                        buffer.CopyTo(_compressedBlocksData[i], 0);
+                        _inputFile.Read(_compressedBlocksData[i], headerSize, compressedBlockLength - headerSize);
 
                         if (_inputFile.Position >= _inputFile.Length)
                         {
                             currNumberOfThreads = i + 1;
                         }
 
-                        var decompressedBlockLength = BitConverter.ToInt32(compressedBlocksData[i], compressedBlockLength - 4); // Length of decompressed block saved in last 4 bytes of compressed one.
-                        blocksData[i] = new byte[decompressedBlockLength];
+                        var decompressedBlockLength = BitConverter.ToInt32(_compressedBlocksData[i], compressedBlockLength - 4); // Length of decompressed block saved in last 4 bytes of compressed one.
+                        _blocksData[i] = new byte[decompressedBlockLength];
 
                         threads[i] = new Thread(DecompressBlock);
                         threads[i].Start(i);
@@ -171,7 +166,7 @@ namespace FileCompressor
 
                     for (var i = 0; i < currNumberOfThreads; i++)
                     {
-                        _outputFile.Write(blocksData[i], 0, blocksData[i].Length);
+                        _outputFile.Write(_blocksData[i], 0, _blocksData[i].Length);
                     }
                 }
             }
